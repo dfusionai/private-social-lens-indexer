@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { EventLog, ethers } from 'ethers';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { Cron } from '@nestjs/schedule';
 import {
   formatEtherNumber,
   formatTimestamp,
@@ -16,9 +17,10 @@ import {
   CRON_DURATION,
   MILLI_SECS_PER_SEC,
   ONE_MONTH_BLOCK_RANGE,
+  ONE_WEEK_BLOCK_RANGE,
+  WORKER_MODE,
 } from '../../utils/const';
 import { BlockRange, IBatch } from '../../utils/types/common.type';
-import { Cron } from '@nestjs/schedule';
 import { CheckpointsService } from '../../checkpoints/checkpoints.service';
 import { QueryType } from '../../utils/common.type';
 
@@ -28,8 +30,6 @@ export class StakingFetchService implements OnModuleInit {
   private newestBlock: number = 0;
   private web3Config: IWeb3Config | undefined;
   private stakingContract: ethers.Contract;
-  private provider: ethers.Provider;
-  private hasInitDone: boolean = false;
 
   constructor(
     private readonly web3Service: Web3Service,
@@ -42,23 +42,29 @@ export class StakingFetchService implements OnModuleInit {
       infer: true,
     });
     this.stakingContract = this.web3Service.getStakingContract();
-    this.provider = this.web3Service.getProvider();
   }
 
   async onModuleInit(): Promise<void> {
+    const isCrawlMode = this.web3Config?.workerMode === WORKER_MODE.CRAWL;
+
+    if (!isCrawlMode) {
+      this.logger.log('This is not crawl mode, skipping');
+      return;
+    }
+
     await this.handleQueryBlocks();
   }
 
   @Cron(CRON_DURATION.EVERY_3_MINUTES)
   async handleCron() {
-    if (!this.hasInitDone) {
+    const isListenMode = this.web3Config?.workerMode === WORKER_MODE.LISTEN;
+
+    if (!isListenMode) {
+      this.logger.log('This is not listen mode, skipping');
       return;
     }
-    await this.handleQueryBlocks();
-  }
 
-  updateHasInitDone(isDone: boolean) {
-    this.hasInitDone = isDone;
+    await this.handleQueryBlocks();
   }
 
   async handleQueryBlocks() {
@@ -78,7 +84,7 @@ export class StakingFetchService implements OnModuleInit {
         'No latest checkpoint found, start fetching from genesis`',
       );
 
-      const fetchFromMonthAgo = this.web3Config?.initDataDuration || 3; //month
+      const fetchFromMonthAgo = this.web3Config?.initDataDuration || 12; //month
       let fromBlock =
         this.newestBlock - fetchFromMonthAgo * ONE_MONTH_BLOCK_RANGE;
       fromBlock = Math.max(fromBlock, 0);
@@ -87,17 +93,16 @@ export class StakingFetchService implements OnModuleInit {
       queryBlocks.toBlock = this.newestBlock;
     } else {
       const latestBlockNumber = Number(latestCheckpoint.blockNumber);
-      if (!isNaN(latestBlockNumber) && latestBlockNumber >= 0) {
-        queryBlocks.fromBlock = latestBlockNumber + 1;
-      }
+      queryBlocks.fromBlock = latestBlockNumber + 1;
       queryBlocks.toBlock = this.newestBlock;
     }
 
-    await this.queue.add('fetch-staking', {
-      type: 'fetch-staking',
-      fromBlock: queryBlocks.fromBlock,
-      toBlock: queryBlocks.toBlock,
-    });
+    if (queryBlocks.fromBlock > queryBlocks.toBlock) {
+      this.logger.log('No new blocks to fetch, skipping');
+      return;
+    }
+
+    await this.fetchStakingEvents(queryBlocks.fromBlock, queryBlocks.toBlock);
   }
 
   async fetchStakingEvents(fromBlock: number, toBlock: number): Promise<void> {
@@ -108,25 +113,18 @@ export class StakingFetchService implements OnModuleInit {
         `Fetching staking events from block ${fromBlock} to ${toBlock}`,
       );
 
-      const monthlyRanges = this.splitIntoMonthlyRanges(fromBlock, toBlock);
-      const allEvents = await this.queryMonthlyRanges(monthlyRanges);
-
-      this.logger.log(`Successfully fetched ${allEvents.length} events`);
-      await this.logEvents(allEvents);
-      await this.checkpointsService.saveLatestCheckpoint(
+      const splitRanges = this.splitIntoRanges(
+        fromBlock,
         toBlock,
-        QueryType.FETCH_STAKING,
+        ONE_WEEK_BLOCK_RANGE,
       );
-
-      if (!this.hasInitDone) {
-        this.updateHasInitDone(true);
-      }
+      await this.queryRanges(splitRanges);
     } catch (error) {
       throw error;
     }
   }
 
-  private validateBlockRange(fromBlock: number, toBlock: number): void {
+  validateBlockRange(fromBlock: number, toBlock: number): void {
     if (fromBlock < 0 || toBlock < 0) {
       throw new Error('Block numbers must be non-negative');
     }
@@ -135,55 +133,56 @@ export class StakingFetchService implements OnModuleInit {
     }
   }
 
-  private splitIntoMonthlyRanges(
+  splitIntoRanges(
     fromBlock: number,
     toBlock: number,
+    splitValue: number,
   ): BlockRange[] {
     const ranges: BlockRange[] = [];
 
-    for (
-      let current = fromBlock;
-      current < toBlock;
-      current += ONE_MONTH_BLOCK_RANGE
-    ) {
-      const rangeEnd = Math.min(current + ONE_MONTH_BLOCK_RANGE - 1, toBlock);
+    for (let current = fromBlock; current < toBlock; current += splitValue) {
+      const rangeEnd = Math.min(current + splitValue - 1, toBlock);
       ranges.push({ from: current, to: rangeEnd });
     }
 
     return ranges;
   }
 
-  private async queryMonthlyRanges(
-    monthlyRanges: BlockRange[],
-  ): Promise<EventLog[]> {
+  async queryRanges(ranges: BlockRange[]): Promise<void> {
+    for (const range of ranges) {
+      await this.queue.add('fetch-staking', {
+        type: 'fetch-staking',
+        fromBlock: range.from,
+        toBlock: range.to,
+      });
+      // Prevent rate limit among requests
+      await this.delay(MILLI_SECS_PER_SEC);
+    }
+  }
+
+  async executeRangeQuery(range: BlockRange): Promise<void> {
     const allEvents: EventLog[] = [];
+    try {
+      const batches = this.createBatches(range.from, range.to);
+      const promises = batches.map((batch) => {
+        return this.web3Service.fetchStaking(batch.from, batch.to);
+      });
 
-    for (const range of monthlyRanges) {
-      try {
-        const events = await this.executeRangeQuery(range);
-        allEvents.push(...events);
-
-        // Prevent rate limit among requests
-        await this.delay(MILLI_SECS_PER_SEC);
-      } catch (error) {
-        throw error;
-      }
+      const batchResults = await Promise.all(promises);
+      const events = batchResults.flat() as EventLog[];
+      allEvents.push(...events);
+    } catch (error) {
+      throw error;
     }
 
-    return allEvents;
+    await this.logEvents(allEvents);
+    await this.checkpointsService.saveLatestCheckpoint(
+      range.to,
+      QueryType.FETCH_STAKING,
+    );
   }
 
-  private async executeRangeQuery(range: BlockRange): Promise<EventLog[]> {
-    const batches = this.createBatches(range.from, range.to);
-    const promises = batches.map((batch) => {
-      return this.web3Service.fetchStaking(batch.from, batch.to);
-    });
-
-    const batchResults = await Promise.all(promises);
-    return batchResults.flat() as EventLog[];
-  }
-
-  private createBatches(fromBlock: number, toBlock: number): IBatch[] {
+  createBatches(fromBlock: number, toBlock: number): IBatch[] {
     const maxBlockRange = this.web3Config?.maxQueryBlockRange || 10000;
     const batches: IBatch[] = [];
 
@@ -207,7 +206,8 @@ export class StakingFetchService implements OnModuleInit {
   ): Promise<any> {
     try {
       if (!user || !ethers.isAddress(user)) {
-        throw new Error('Invalid user address');
+        this.logger.warn(`Invalid user address: ${user}`);
+        return null;
       }
 
       const totalStakes = await this.stakingContract.getActiveStakes(user);
@@ -229,7 +229,7 @@ export class StakingFetchService implements OnModuleInit {
 
       return stake || null;
     } catch (error) {
-      this.logger.error(`Failed to find stake for user ${user}`, error);
+      this.logger.error(`Failed to find stake for user ${user}:`, error);
       return null;
     }
   }
@@ -253,7 +253,7 @@ export class StakingFetchService implements OnModuleInit {
     this.logger.log('Finished processing staking events');
   }
 
-  private async processStakingEvent(event: EventLog): Promise<void> {
+  async processStakingEvent(event: EventLog): Promise<void> {
     const [user, amount, startTime, duration] = event.args;
 
     if (!user || !amount || !startTime || !duration) {
@@ -281,7 +281,7 @@ export class StakingFetchService implements OnModuleInit {
     await this.stakingEventsService.create(stakingEvent);
   }
 
-  private delay(ms: number): Promise<void> {
+  delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

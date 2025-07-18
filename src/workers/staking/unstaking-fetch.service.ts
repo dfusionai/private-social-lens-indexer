@@ -13,6 +13,8 @@ import {
   CRON_DURATION,
   MILLI_SECS_PER_SEC,
   ONE_MONTH_BLOCK_RANGE,
+  ONE_WEEK_BLOCK_RANGE,
+  WORKER_MODE,
 } from '../../utils/const';
 import { BlockRange, IBatch } from '../../utils/types/common.type';
 import { CheckpointsService } from '../../checkpoints/checkpoints.service';
@@ -24,7 +26,6 @@ export class UnstakingFetchService implements OnModuleInit {
   private newestBlock: number = 0;
   private web3Config: IWeb3Config | undefined;
   private provider: ethers.Provider;
-  private hasInitDone: boolean = false;
 
   constructor(
     private readonly web3Service: Web3Service,
@@ -40,19 +41,26 @@ export class UnstakingFetchService implements OnModuleInit {
   }
 
   async onModuleInit() {
+    const isCrawlMode = this.web3Config?.workerMode === WORKER_MODE.CRAWL;
+
+    if (!isCrawlMode) {
+      this.logger.log('This is not crawl mode, skipping');
+      return;
+    }
+
     await this.handleQueryBlocks();
   }
 
   @Cron(CRON_DURATION.EVERY_3_MINUTES)
   async handleCron() {
-    if (!this.hasInitDone) {
+    const isListenMode = this.web3Config?.workerMode === WORKER_MODE.LISTEN;
+
+    if (!isListenMode) {
+      this.logger.log('This is not listen mode, skipping');
       return;
     }
-    await this.handleQueryBlocks();
-  }
 
-  updateHasInitDone(isDone: boolean) {
-    this.hasInitDone = isDone;
+    await this.handleQueryBlocks();
   }
 
   async handleQueryBlocks() {
@@ -71,7 +79,7 @@ export class UnstakingFetchService implements OnModuleInit {
         'No latest unstake checkpoint found, start fetching from genesis`',
       );
 
-      const fetchFromMonthAgo = this.web3Config?.initDataDuration || 3; //month
+      const fetchFromMonthAgo = this.web3Config?.initDataDuration || 12; //month
       let fromBlock =
         this.newestBlock - fetchFromMonthAgo * ONE_MONTH_BLOCK_RANGE;
       fromBlock = Math.max(fromBlock, 0);
@@ -80,17 +88,16 @@ export class UnstakingFetchService implements OnModuleInit {
       queryBlocks.toBlock = this.newestBlock;
     } else {
       const latestBlockNumber = Number(latestCheckpoint.blockNumber);
-      if (!isNaN(latestBlockNumber) && latestBlockNumber >= 0) {
-        queryBlocks.fromBlock = latestBlockNumber + 1;
-      }
+      queryBlocks.fromBlock = latestBlockNumber + 1;
       queryBlocks.toBlock = this.newestBlock;
     }
 
-    await this.queue.add('fetch-unstaking', {
-      type: 'fetch-unstaking',
-      fromBlock: queryBlocks.fromBlock,
-      toBlock: queryBlocks.toBlock,
-    });
+    if (queryBlocks.fromBlock > queryBlocks.toBlock) {
+      this.logger.log('No new blocks to fetch, skipping');
+      return;
+    }
+
+    await this.fetchUnstakingEvents(queryBlocks.fromBlock, queryBlocks.toBlock);
   }
 
   async fetchUnstakingEvents(
@@ -104,25 +111,18 @@ export class UnstakingFetchService implements OnModuleInit {
         `Fetching unstaking events from block ${fromBlock} to ${toBlock}`,
       );
 
-      const monthlyRanges = this.splitIntoMonthlyRanges(fromBlock, toBlock);
-      const allEvents = await this.queryMonthlyRanges(monthlyRanges);
-
-      this.logger.log(`Successfully fetched ${allEvents.length} events`);
-      await this.checkpointsService.saveLatestCheckpoint(
+      const splitRanges = this.splitIntoRanges(
+        fromBlock,
         toBlock,
-        QueryType.FETCH_UNSTAKING,
+        ONE_WEEK_BLOCK_RANGE,
       );
-      await this.logEvents(allEvents);
-
-      if (!this.hasInitDone) {
-        this.updateHasInitDone(true);
-      }
+      await this.queryRanges(splitRanges);
     } catch (error) {
       throw error;
     }
   }
 
-  private validateBlockRange(fromBlock: number, toBlock: number): void {
+  validateBlockRange(fromBlock: number, toBlock: number): void {
     if (fromBlock < 0 || toBlock < 0) {
       throw new Error('Block numbers must be non-negative');
     }
@@ -131,55 +131,61 @@ export class UnstakingFetchService implements OnModuleInit {
     }
   }
 
-  private splitIntoMonthlyRanges(
+  splitIntoRanges(
     fromBlock: number,
     toBlock: number,
+    splitValue: number,
   ): BlockRange[] {
     const ranges: BlockRange[] = [];
 
-    for (
-      let current = fromBlock;
-      current < toBlock;
-      current += ONE_MONTH_BLOCK_RANGE
-    ) {
-      const rangeEnd = Math.min(current + ONE_MONTH_BLOCK_RANGE - 1, toBlock);
+    for (let current = fromBlock; current < toBlock; current += splitValue) {
+      const rangeEnd = Math.min(current + splitValue - 1, toBlock);
       ranges.push({ from: current, to: rangeEnd });
     }
 
     return ranges;
   }
 
-  private async queryMonthlyRanges(
-    monthlyRanges: BlockRange[],
-  ): Promise<EventLog[]> {
+  async queryRanges(ranges: BlockRange[]): Promise<EventLog[]> {
     const allEvents: EventLog[] = [];
 
-    for (const range of monthlyRanges) {
-      try {
-        const events = await this.executeRangeQuery(range);
-        allEvents.push(...events);
+    for (const range of ranges) {
+      await this.queue.add('fetch-unstaking', {
+        type: 'fetch-unstaking',
+        fromBlock: range.from,
+        toBlock: range.to,
+      });
 
-        // Prevent rate limit among requests
-        await this.delay(MILLI_SECS_PER_SEC);
-      } catch (error) {
-        throw error;
-      }
+      // Prevent rate limit among requests
+      await this.delay(MILLI_SECS_PER_SEC);
     }
 
     return allEvents;
   }
 
-  private async executeRangeQuery(range: BlockRange): Promise<EventLog[]> {
-    const batches = this.createBatches(range.from, range.to);
-    const promises = batches.map((batch) => {
-      return this.web3Service.fetchUnstaking(batch.from, batch.to);
-    });
+  async executeRangeQuery(range: BlockRange): Promise<void> {
+    const allEvents: EventLog[] = [];
+    try {
+      const batches = this.createBatches(range.from, range.to);
+      const promises = batches.map((batch) => {
+        return this.web3Service.fetchUnstaking(batch.from, batch.to);
+      });
 
-    const batchResults = await Promise.all(promises);
-    return batchResults.flat() as EventLog[];
+      const batchResults = await Promise.all(promises);
+      const events = batchResults.flat() as EventLog[];
+      allEvents.push(...events);
+    } catch (error) {
+      throw error;
+    }
+
+    await this.logEvents(allEvents);
+    await this.checkpointsService.saveLatestCheckpoint(
+      range.to,
+      QueryType.FETCH_UNSTAKING,
+    );
   }
 
-  private createBatches(fromBlock: number, toBlock: number): IBatch[] {
+  createBatches(fromBlock: number, toBlock: number): IBatch[] {
     const maxBlockRange = this.web3Config?.maxQueryBlockRange || 10000;
     const batches: IBatch[] = [];
 
@@ -214,7 +220,7 @@ export class UnstakingFetchService implements OnModuleInit {
     this.logger.log('Finished processing unstaking events');
   }
 
-  private async processUnstakingEvent(event: EventLog): Promise<void> {
+  async processUnstakingEvent(event: EventLog): Promise<void> {
     const [walletAddress, amount] = event.args;
 
     if (!walletAddress || !amount) {
@@ -245,7 +251,7 @@ export class UnstakingFetchService implements OnModuleInit {
     await this.unstakingEventsService.create(unstakingEvent);
   }
 
-  private delay(ms: number): Promise<void> {
+  delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

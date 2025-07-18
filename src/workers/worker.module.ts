@@ -18,9 +18,8 @@ import { CheckpointsModule } from '../checkpoints/checkpoints.module';
       connection: {
         host: 'localhost',
         port: 6379,
-        retryDelayOnFailover: 100,
+        retryDelayOnFailover: 1000,
         maxRetriesPerRequest: 3,
-        enableReadyCheck: false,
       },
     }),
     BullModule.registerQueue({
