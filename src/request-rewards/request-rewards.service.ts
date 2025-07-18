@@ -27,7 +27,7 @@ export class RequestRewardsService {
 
   async getTokenEmissionMovement(
     query: GetTokenEmissionDto,
-  ): Promise<Array<{ stakeamount: string; date: string }>> {
+  ): Promise<Array<{ reqrewardamount: string; date: string }>> {
     try {
       this.validateDateRange(query);
       const { startDate, endDate } = query;
@@ -41,7 +41,7 @@ export class RequestRewardsService {
           },
         )
         .select([
-          'SUM(CAST(requestRewards.rewardAmount AS DECIMAL)) as stakeamount',
+          'SUM(CAST(requestRewards.rewardAmount AS DECIMAL)) as reqrewardamount',
           "DATE(to_timestamp(requestRewards.blockTimestamp / 1000) AT TIME ZONE 'UTC') as date",
         ])
         .groupBy(
@@ -52,13 +52,13 @@ export class RequestRewardsService {
 
       const movementData = this.generateCompleteDateRange(query, result);
       this.logger.log(
-        `Generated staking movement data for period ${startDate}-${endDate}: ${movementData.length} days`,
+        `Generated token emission movement data for period ${startDate}-${endDate}: ${movementData.length} days`,
       );
       return movementData;
     } catch (error) {
-      this.logger.error('Failed to get staking movement', error);
+      this.logger.error('Failed to get token emission movement', error);
       throw new InternalServerErrorException(
-        'Failed to retrieve staking movement data',
+        'Failed to retrieve token emission movement data',
       );
     }
   }
@@ -84,14 +84,14 @@ export class RequestRewardsService {
 
   private generateCompleteDateRange(
     query: GetTokenEmissionDto,
-    result: Array<{ stakeamount: string; date: string }>,
-  ): Array<{ stakeamount: string; date: string }> {
-    const stakesByDate: { [key: string]: string } = {};
+    result: Array<{ reqrewardamount: string; date: string }>,
+  ): Array<{ reqrewardamount: string; date: string }> {
+    const reqRewardAmountByDate: { [key: string]: string } = {};
     result.forEach((row) => {
       const dateKey = new Date(row.date).toISOString().split('T')[0];
-      stakesByDate[dateKey] = row.stakeamount;
+      reqRewardAmountByDate[dateKey] = row.reqrewardamount;
     });
-    const finalResult: Array<{ stakeamount: string; date: string }> = [];
+    const finalResult: Array<{ reqrewardamount: string; date: string }> = [];
     const start = new Date(Number(query.startDate));
     const end = new Date(Number(query.endDate));
     const daysDiff = Math.ceil(
@@ -101,9 +101,10 @@ export class RequestRewardsService {
       const currentDate = new Date(start);
       currentDate.setDate(start.getDate() + i);
       const dateKey = currentDate.toISOString().split('T')[0];
-      const stakeAmount = stakesByDate[dateKey] || '0';
+      const reqRewardAmount = reqRewardAmountByDate[dateKey] || '0';
+
       finalResult.push({
-        stakeamount: stakeAmount,
+        reqrewardamount: reqRewardAmount,
         date: currentDate.toISOString(),
       });
     }

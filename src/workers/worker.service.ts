@@ -24,10 +24,10 @@ export type BlockchainFetchJob =
   | FetchReqRewardJob;
 
 @Processor('blockchain-index-event', {
-  concurrency: 1, // Process one job at a time to prevent rate limit
-  lockDuration: 30000, // 30 seconds lock duration
-  lockRenewTime: 15000, // Renew lock every 15 seconds
-  stalledInterval: 30000, // Check for stalled jobs every 30 seconds
+  concurrency: 10,
+  lockDuration: 180000,
+  lockRenewTime: 120000,
+  stalledInterval: 180000,
 })
 @Injectable()
 export class WorkerService extends WorkerHost {
@@ -48,22 +48,22 @@ export class WorkerService extends WorkerHost {
 
     try {
       if (job.type === 'fetch-staking') {
-        await this.stakingFetchService.fetchStakingEvents(
-          job.fromBlock,
-          job.toBlock,
-        );
+        await this.stakingFetchService.executeRangeQuery({
+          from: job.fromBlock,
+          to: job.toBlock,
+        });
         console.log('Successfully processed fetch staking job');
       } else if (job.type === 'fetch-unstaking') {
-        await this.unstakingFetchService.fetchUnstakingEvents(
-          job.fromBlock,
-          job.toBlock,
-        );
+        await this.unstakingFetchService.executeRangeQuery({
+          from: job.fromBlock,
+          to: job.toBlock,
+        });
         console.log('Successfully processed fetch unstaking job');
       } else if (job.type === 'fetch-req-reward') {
-        await this.reqRewardFetchService.fetchReqRewardEvents(
-          job.fromBlock,
-          job.toBlock,
-        );
+        await this.reqRewardFetchService.executeRangeQuery({
+          from: job.fromBlock,
+          to: job.toBlock,
+        });
         console.log('Successfully processed fetch req reward job');
       }
     } catch (error) {

@@ -10,7 +10,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-
+import { WORKER_MODE } from '../utils/const';
 enum Environment {
   Development = 'development',
   Production = 'production',
@@ -75,6 +75,10 @@ class EnvironmentVariablesValidator {
   @IsString()
   @IsOptional()
   RPC_URL: string;
+
+  @IsString()
+  @IsOptional()
+  WORKER_MODE: string;
 }
 
 export default registerAs<AppConfig>('app', () => {
@@ -104,13 +108,14 @@ export default registerAs<AppConfig>('app', () => {
       maxQueryPerSec: process.env.MAX_REQUESTS_PER_SEC
         ? parseInt(process.env.MAX_REQUESTS_PER_SEC, 10)
         : 100,
-      rpcUrl: process.env.RPC_URL,
-      stakingContractAddress: process.env.STAKING_CONTRACT_ADDRESS,
-      dlpContractAddress: process.env.DLP_CONTRACT_ADDRESS,
-      tokenContractAddress: process.env.TOKEN_CONTRACT_ADDRESS,
+      rpcUrl: process.env.RPC_URL || '',
+      stakingContractAddress: process.env.STAKING_CONTRACT_ADDRESS || '',
+      dlpContractAddress: process.env.DLP_CONTRACT_ADDRESS || '',
+      tokenContractAddress: process.env.TOKEN_CONTRACT_ADDRESS || '',
       initDataDuration: process.env.INIT_DATA_DURATION
         ? parseInt(process.env.INIT_DATA_DURATION, 10)
-        : 3,
+        : 12,
+      workerMode: process.env.WORKER_MODE || WORKER_MODE.CRAWL,
     },
   };
 });

@@ -78,4 +78,8 @@ MAX_QUERY_BLOCK_RANGE = 10000
 MAX_REQUESTS_PER_SEC = 100
 #unit: sec
 AVERAGE_BLOCK_TIME = 6
-INIT_DATA_DURATION = 1
+INIT_DATA_DURATION = 12 # the number of months which we crawl data, for instance: 12 means we crawl data from 12 months ago until now
+
+# =====Worker mode: CRAWL or LISTEN=====
+WORKER_MODE = CRAWL
+# WORKER_MODE = LISTEN
