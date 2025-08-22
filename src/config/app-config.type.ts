@@ -1,13 +1,11 @@
 export interface IWeb3Config {
-  averageBlockTime: number;
   maxQueryBlockRange: number;
   maxQueryPerSec: number;
   rpcUrl: string;
   stakingContractAddress: string;
   dlpContractAddress: string;
   tokenContractAddress: string;
-  initDataDuration: number;
-  workerMode: string;
+  startBlock?: number;
 }
 
 export interface IWorkerConfig {
@@ -27,4 +25,5 @@ export type AppConfig = {
   headerLanguage: string;
   web3Config: IWeb3Config;
   workerConfig: IWorkerConfig;
+  i18nWatchFiles: boolean;
 };

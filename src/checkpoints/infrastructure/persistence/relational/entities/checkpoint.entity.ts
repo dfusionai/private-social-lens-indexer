@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { EntityRelationalHelper } from '../../../../../utils/relational-entity-helper';
-import { QueryType } from '../../../../../utils/common.type';
+import { JobEventType } from '../../../../../jobs/domain/job';
 
 @Entity({
   name: 'checkpoint',
@@ -26,20 +26,10 @@ export class CheckpointEntity extends EntityRelationalHelper {
   fromBlockNumber: number;
 
   @Column({
-    type: 'numeric',
-  })
-  blockTimestamp: number;
-
-  @Column({
     type: 'enum',
-    enum: QueryType,
+    enum: JobEventType,
   })
-  queryType: QueryType;
-
-  @Column({
-    type: 'boolean',
-  })
-  isFailed: boolean;
+  queryType: JobEventType;
 
   @CreateDateColumn()
   createdAt: Date;

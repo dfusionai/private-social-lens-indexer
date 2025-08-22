@@ -13,6 +13,13 @@ import { ReqRewardFetchService } from './contributor/req-reward-fetch.service';
 import { RequestRewardsModule } from '../request-rewards/request-rewards.module';
 import { CheckpointsModule } from '../checkpoints/checkpoints.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JobsModule } from '../jobs/jobs.module';
+
+import { IndexingOrchestratorService } from './indexing-orchestrator.service';
+import { IndexingOrchestratorController } from './indexing-orchestrator.controller';
+import { WorkerController } from './worker.controller';
+import { JobRecoveryService } from './job-recovery.service';
+import { JobRecoveryController } from './job-recovery.controller';
 
 @Module({
   imports: [
@@ -44,6 +51,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     UnstakingEventsModule,
     RequestRewardsModule,
     CheckpointsModule,
+    JobsModule,
+  ],
+  controllers: [
+    IndexingOrchestratorController,
+    WorkerController,
+    JobRecoveryController,
   ],
   providers: [
     Web3Service,
@@ -51,7 +64,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     UnstakingFetchService,
     ReqRewardFetchService,
     WorkerService,
+    IndexingOrchestratorService,
+    JobRecoveryService,
   ],
-  exports: [WorkerService],
+  exports: [WorkerService, IndexingOrchestratorService],
 })
 export class WorkerModule {}

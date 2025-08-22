@@ -4,8 +4,8 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "assets": [
-      { "include": "i18n/**/*", "watchAssets": true },
-      { "include": "contract/**/*", "watchAssets": true }
+      { "include": "i18n/**/*", "watchAssets": false },
+      { "include": "contract/**/*", "watchAssets": false }
     ]
   }
 }

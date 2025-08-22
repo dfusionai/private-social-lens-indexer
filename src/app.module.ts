@@ -23,7 +23,11 @@ import { MailerModule } from './mailer/mailer.module';
 import { WorkerModule } from './workers/worker.module';
 import { StakingEventsModule } from './staking-events/staking-events.module';
 import { UnstakingEventsModule } from './unstaking-events/unstaking-events.module';
+import { RequestRewardsModule } from './request-rewards/request-rewards.module';
+import { CheckpointsModule } from './checkpoints/checkpoints.module';
 import { ScheduleModule } from '@nestjs/schedule';
+
+import { JobsModule } from './jobs/jobs.module';
 
 const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
   useClass: TypeOrmConfigService,
@@ -54,7 +58,10 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
         fallbackLanguage: configService.getOrThrow('app.fallbackLanguage', {
           infer: true,
         }),
-        loaderOptions: { path: path.join(__dirname, '/i18n/'), watch: true },
+        loaderOptions: {
+          path: path.join(__dirname, '/i18n/'),
+          watch: configService.get('app.i18nWatchFiles', { infer: true }),
+        },
       }),
       resolvers: [
         {
@@ -82,6 +89,9 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
     HomeModule,
     StakingEventsModule,
     UnstakingEventsModule,
+    RequestRewardsModule,
+    CheckpointsModule,
+    JobsModule,
   ],
 })
 export class AppModule {}

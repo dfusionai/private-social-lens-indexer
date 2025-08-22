@@ -5,7 +5,7 @@ export class CreateIndexingTables1753177317348 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `CREATE TYPE "public"."checkpoint_querytype_enum" AS ENUM('fetch-staking', 'fetch-unstaking', 'fetch-request-reward', 'refresh-failed-staking', 'refresh-failed-unstaking', 'refresh-failed-request-reward')`,
+      `CREATE TYPE "public"."checkpoint_querytype_enum" AS ENUM('REQUEST_REWARD', 'STAKING', 'UNSTAKING')`,
     );
 
     await queryRunner.query(
@@ -18,7 +18,7 @@ export class CreateIndexingTables1753177317348 implements MigrationInterface {
       `CREATE TABLE "request_reward" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "blockNumber" numeric NOT NULL, "contributorAddress" character varying NOT NULL, "rewardAmount" numeric NOT NULL, "fileId" numeric NOT NULL, "proofIndex" numeric NOT NULL, "txHash" character varying NOT NULL, "blockTimestamp" numeric NOT NULL, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "UQ_39e5fa6d7c7a51f0b8ee3660a9b" UNIQUE ("txHash"), CONSTRAINT "PK_022cfb1878020898b239cbcdbd0" PRIMARY KEY ("id"))`,
     );
     await queryRunner.query(
-      `CREATE TABLE "checkpoint" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "toBlockNumber" numeric NOT NULL, "fromBlockNumber" numeric NOT NULL, "blockTimestamp" numeric NOT NULL, "queryType" "public"."checkpoint_querytype_enum" NOT NULL, "isFailed" boolean NOT NULL, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_fea86db187949398f8b614f730a" PRIMARY KEY ("id"))`,
+      `CREATE TABLE "checkpoint" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "toBlockNumber" numeric NOT NULL, "fromBlockNumber" numeric NOT NULL, "queryType" "public"."checkpoint_querytype_enum" NOT NULL, "createdAt" TIMESTAMP NOT NULL DEFAULT now(), "updatedAt" TIMESTAMP NOT NULL DEFAULT now(), CONSTRAINT "PK_fea86db187949398f8b614f730a" PRIMARY KEY ("id"))`,
     );
   }
 

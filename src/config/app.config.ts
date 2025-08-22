@@ -10,7 +10,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { WORKER_MODE } from '../utils/const';
+
 enum Environment {
   Development = 'development',
   Production = 'production',
@@ -62,10 +62,6 @@ class EnvironmentVariablesValidator {
 
   @IsString()
   @IsOptional()
-  AVERAGE_BLOCK_TIME: string;
-
-  @IsString()
-  @IsOptional()
   MAX_QUERY_BLOCK_RANGE: string;
 
   @IsString()
@@ -76,9 +72,9 @@ class EnvironmentVariablesValidator {
   @IsOptional()
   RPC_URL: string;
 
-  @IsString()
   @IsOptional()
-  WORKER_MODE: string;
+  @IsString()
+  APP_I18N_WATCH_FILES: string;
 }
 
 export default registerAs<AppConfig>('app', () => {
@@ -99,9 +95,6 @@ export default registerAs<AppConfig>('app', () => {
     fallbackLanguage: process.env.APP_FALLBACK_LANGUAGE || 'en',
     headerLanguage: process.env.APP_HEADER_LANGUAGE || 'x-custom-lang',
     web3Config: {
-      averageBlockTime: process.env.AVERAGE_BLOCK_TIME
-        ? parseInt(process.env.AVERAGE_BLOCK_TIME, 10)
-        : 6,
       maxQueryBlockRange: process.env.MAX_QUERY_BLOCK_RANGE
         ? parseInt(process.env.MAX_QUERY_BLOCK_RANGE, 10)
         : 10000,
@@ -112,10 +105,9 @@ export default registerAs<AppConfig>('app', () => {
       stakingContractAddress: process.env.STAKING_CONTRACT_ADDRESS || '',
       dlpContractAddress: process.env.DLP_CONTRACT_ADDRESS || '',
       tokenContractAddress: process.env.TOKEN_CONTRACT_ADDRESS || '',
-      initDataDuration: process.env.INIT_DATA_DURATION
-        ? Number(process.env.INIT_DATA_DURATION)
-        : 12,
-      workerMode: process.env.WORKER_MODE || WORKER_MODE.CRAWL,
+      startBlock: process.env.START_BLOCK
+        ? Number(process.env.START_BLOCK)
+        : undefined,
     },
     workerConfig: {
       redisHost: process.env.REDIS_HOST || 'localhost',
@@ -123,5 +115,8 @@ export default registerAs<AppConfig>('app', () => {
         ? parseInt(process.env.REDIS_PORT, 10)
         : 6379,
     },
+    i18nWatchFiles: process.env.APP_I18N_WATCH_FILES
+      ? process.env.APP_I18N_WATCH_FILES.toLowerCase() === 'true'
+      : false,
   };
 });

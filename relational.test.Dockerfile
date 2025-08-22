@@ -1,3 +1,5 @@
+# Use platform flag only on ARM64 (Apple Silicon)
+ARG TARGETPLATFORM
 FROM node:22.16.0-alpine
 
 RUN apk add --no-cache bash

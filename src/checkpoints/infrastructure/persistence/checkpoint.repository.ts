@@ -2,7 +2,6 @@ import { DeepPartial } from '../../../utils/types/deep-partial.type';
 import { NullableType } from '../../../utils/types/nullable.type';
 import { IPaginationOptions } from '../../../utils/types/pagination-options';
 import { Checkpoint } from '../../domain/checkpoint';
-import { QueryType } from '../../../utils/common.type';
 export abstract class CheckpointRepository {
   abstract create(
     data: Omit<Checkpoint, 'id' | 'createdAt' | 'updatedAt'>,
@@ -18,11 +17,9 @@ export abstract class CheckpointRepository {
 
   abstract findByIds(ids: Checkpoint['id'][]): Promise<Checkpoint[]>;
 
-  abstract findLatestCheckpoint(
-    queryType: QueryType,
-  ): Promise<NullableType<Checkpoint>>;
+  abstract findLatestCheckpoint(): Promise<NullableType<Checkpoint>>;
 
-  abstract findFailedCheckpoints(queryType: QueryType): Promise<Checkpoint[]>;
+  abstract findOldestCheckpoint(): Promise<NullableType<Checkpoint>>;
 
   abstract update(
     id: Checkpoint['id'],

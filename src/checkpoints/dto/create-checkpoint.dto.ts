@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { QueryType } from '../../utils/common.type';
+import { JobEventType } from '../../jobs/domain/job';
 
 export class CreateCheckpointDto {
   @ApiProperty({
@@ -15,15 +15,5 @@ export class CreateCheckpointDto {
   @ApiProperty({
     type: String,
   })
-  blockTimestamp: string;
-
-  @ApiProperty({
-    type: String,
-  })
-  queryType: QueryType;
-
-  @ApiProperty({
-    type: Boolean,
-  })
-  isFailed: boolean;
+  queryType: JobEventType;
 }

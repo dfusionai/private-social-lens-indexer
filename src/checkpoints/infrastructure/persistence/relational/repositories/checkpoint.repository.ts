@@ -7,7 +7,6 @@ import { Checkpoint } from '../../../../domain/checkpoint';
 import { CheckpointRepository } from '../../checkpoint.repository';
 import { CheckpointMapper } from '../mappers/checkpoint.mapper';
 import { IPaginationOptions } from '../../../../../utils/types/pagination-options';
-import { QueryType } from '../../../../../utils/common.type';
 
 @Injectable()
 export class CheckpointRelationalRepository implements CheckpointRepository {
@@ -53,21 +52,20 @@ export class CheckpointRelationalRepository implements CheckpointRepository {
     return entities.map((entity) => CheckpointMapper.toDomain(entity));
   }
 
-  async findLatestCheckpoint(queryType: QueryType): Promise<Checkpoint | null> {
+  async findLatestCheckpoint(): Promise<Checkpoint | null> {
     const entities = await this.checkpointRepository.find({
-      where: { queryType, isFailed: false },
       order: { toBlockNumber: 'DESC' },
     });
 
     return entities.length > 0 ? CheckpointMapper.toDomain(entities[0]) : null;
   }
 
-  async findFailedCheckpoints(queryType: QueryType): Promise<Checkpoint[]> {
+  async findOldestCheckpoint(): Promise<Checkpoint | null> {
     const entities = await this.checkpointRepository.find({
-      where: { queryType, isFailed: true },
+      order: { toBlockNumber: 'ASC' },
     });
 
-    return entities.map((entity) => CheckpointMapper.toDomain(entity));
+    return entities.length > 0 ? CheckpointMapper.toDomain(entities[0]) : null;
   }
 
   async update(
